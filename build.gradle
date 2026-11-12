@@ -1,0 +1,33 @@
+plugins {
+    id 'java'
+}
+
+group = 'org.example'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+    maven { url "https://jitpack.io" }
+}
+
+def jmeVersion = "3.6.1-stable"
+
+dependencies {
+    // jMonkeyEngine core modules
+    implementation "org.jmonkeyengine:jme3-core:$jmeVersion"
+    implementation "org.jmonkeyengine:jme3-desktop:$jmeVersion"
+    implementation "org.jmonkeyengine:jme3-lwjgl3:$jmeVersion"
+
+    // Physics: Minie (Bullet + native libraries in one jar), built for jME 3.6.1.
+    // Replaces jme3-bullet / jme3-bullet-native, which are not published for 3.6.x.
+    implementation "com.github.stephengold:Minie:8.2.0"
+
+    // Test libraries
+    testImplementation platform('org.junit:junit-bom:5.10.0')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+}
