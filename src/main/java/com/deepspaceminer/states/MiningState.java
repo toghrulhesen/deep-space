@@ -18,6 +18,7 @@ import com.jme3.input.controls.ActionListener;
 import com.jme3.input.controls.KeyTrigger;
 import com.jme3.input.controls.MouseButtonTrigger;
 import com.jme3.material.Material;
+import com.jme3.math.FastMath;
 import com.jme3.math.Ray;
 import com.jme3.math.Vector3f;
 import com.jme3.renderer.Camera;
@@ -34,7 +35,8 @@ import java.util.logging.Logger;
 
 /**
  * Scatters minerals over the planet surface, finds the one the player is looking at
- * and lets the player mine it (E or left mouse button). Mined resources go to the inventory.
+ * and lets the player mine it: hold E or the left mouse button while aiming at a mineral
+ * until the progress bar is full. Mined resources go to the inventory.
  */
 public class MiningState extends BaseAppState {
 
@@ -60,6 +62,24 @@ public class MiningState extends BaseAppState {
     // Maximum distance (meters) from which a mineral can be mined
     private static final float MINING_RANGE = 5f;
 
+    // Mining time grows with the size of the mineral (radius 0.4 -> 0.8 s, radius 1.0 -> 2 s)
+    private static final float MINING_SECONDS_PER_RADIUS = 2f;
+
+    /** A mineral that is currently in the world. */
+    private static final class Mineral {
+        private final MineralType type;
+        private final float radius;
+
+        private Mineral(MineralType type, float radius) {
+            this.type = type;
+            this.radius = radius;
+        }
+
+        private float getMiningSeconds() {
+            return radius * MINING_SECONDS_PER_RADIUS;
+        }
+    }
+
     private final Node sceneRoot;
     private final Inventory inventory;
     private final float groundY;
@@ -72,16 +92,22 @@ public class MiningState extends BaseAppState {
     private Node mineralRoot;
     private PhysicsSpace space;
 
-    // Minerals that are currently in the world
-    private final Map<Geometry, MineralType> minerals = new HashMap<>();
+    private final Map<Geometry, Mineral> minerals = new HashMap<>();
     // Static bodies waiting to be added to the physics space
     private final List<RigidBodyControl> pendingBodies = new ArrayList<>();
 
     private final Ray ray = new Ray();
     private final CollisionResults results = new CollisionResults();
 
+    // The mineral the player is aiming at (within range), or null
     private Geometry targetGeometry;
-    private boolean mineRequested;
+    // The exact point on that mineral where the aiming ray hits it
+    private final Vector3f targetPoint = new Vector3f();
+
+    // Hold-to-mine state: which mineral is being mined and how far along (0..1)
+    private boolean mineHeld;
+    private Geometry miningGeometry;
+    private float miningProgress;
 
     /**
      * @param sceneRoot    gameplay scene root (it holds the lights, so minerals must live under it)
@@ -166,15 +192,15 @@ public class MiningState extends BaseAppState {
         body.setPhysicsLocation(position);
         pendingBodies.add(body);
 
-        minerals.put(geom, type);
+        minerals.put(geom, new Mineral(type, radius));
     }
 
     private final ActionListener actionListener = (name, isPressed, tpf) -> {
-        if (!isEnabled() || !isPressed) return;
+        if (!isEnabled()) return;
 
         if (name.equals(MAP_MINE)) {
-            // Handled in update() so the scene is never changed in the middle of input dispatch
-            mineRequested = true;
+            // Only remember the button state; the actual work happens in update()
+            mineHeld = isPressed;
         }
     };
 
@@ -182,11 +208,7 @@ public class MiningState extends BaseAppState {
     public void update(float tpf) {
         registerBodies();
         updateTarget();
-
-        if (mineRequested) {
-            mineRequested = false;
-            mineTarget();
-        }
+        updateMining(tpf);
     }
 
     /** The physics space is created after the first frame, so bodies are registered lazily. */
@@ -221,16 +243,40 @@ public class MiningState extends BaseAppState {
         Geometry hit = closest.getGeometry();
         if (minerals.containsKey(hit)) {
             targetGeometry = hit;
+            targetPoint.set(closest.getContactPoint());
         }
     }
 
-    private void mineTarget() {
-        if (targetGeometry == null) return;
+    /**
+     * Fills the progress while the player holds the button and keeps aiming at the same mineral.
+     * Releasing the button or looking away (or at another mineral) resets the progress.
+     */
+    private void updateMining(float tpf) {
+        if (!mineHeld || targetGeometry == null) {
+            resetMining();
+            return;
+        }
 
-        Geometry geom = targetGeometry;
-        targetGeometry = null;
+        if (targetGeometry != miningGeometry) {
+            // New mineral: start from zero
+            miningGeometry = targetGeometry;
+            miningProgress = 0f;
+        }
 
-        MineralType type = minerals.remove(geom);
+        Mineral mineral = minerals.get(miningGeometry);
+        miningProgress += tpf / mineral.getMiningSeconds();
+        if (miningProgress >= 1f) {
+            mine(miningGeometry);
+        }
+    }
+
+    private void resetMining() {
+        miningGeometry = null;
+        miningProgress = 0f;
+    }
+
+    private void mine(Geometry geom) {
+        Mineral mineral = minerals.remove(geom);
         RigidBodyControl body = geom.getControl(RigidBodyControl.class);
         // If the body was never added to the space it is simply dropped from the pending list
         if (!pendingBodies.remove(body) && space != null) {
@@ -238,13 +284,37 @@ public class MiningState extends BaseAppState {
         }
         geom.removeFromParent();
 
+        resetMining();
+        targetGeometry = null;
+
+        MineralType type = mineral.type;
         inventory.add(type, type.getYield());
         logger.info("Mined " + type.getDisplayName() + " (+" + type.getYield() + ")");
     }
 
     /** The mineral type the player is looking at within mining range, or null. */
     public MineralType getTargetType() {
-        return targetGeometry == null ? null : minerals.get(targetGeometry);
+        if (targetGeometry == null) return null;
+        Mineral mineral = minerals.get(targetGeometry);
+        return mineral == null ? null : mineral.type;
+    }
+
+    /** Mining progress from 0 to 1; 0 when nothing is being mined. */
+    public float getMiningProgress() {
+        return miningGeometry == null ? 0f : FastMath.clamp(miningProgress, 0f, 1f);
+    }
+
+    /** True while a mineral is actually being mined (button held and aiming at it). */
+    public boolean isMining() {
+        return getMiningProgress() > 0f;
+    }
+
+    /**
+     * The point on the aimed mineral where the aiming ray hits it (read only).
+     * Only meaningful while getTargetType() is not null.
+     */
+    public Vector3f getTargetPoint() {
+        return targetPoint;
     }
 
     @Override
@@ -268,8 +338,9 @@ public class MiningState extends BaseAppState {
 
     @Override
     protected void onDisable() {
-        // Forget pending input so a click made while pausing is not applied after resuming
-        mineRequested = false;
+        // Forget held input and progress so mining does not continue (or finish) after a pause
+        mineHeld = false;
         targetGeometry = null;
+        resetMining();
     }
 }

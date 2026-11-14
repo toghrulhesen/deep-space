@@ -39,10 +39,11 @@ public class GameplayState extends BaseAppState {
     // Data shared between child states
     private Inventory inventory;
 
-    // Child states: physics world, player control, mining and HUD
+    // Child states: physics world, player control, mining, laser and HUD
     private PhysicsState physics;
     private PlayerControlState player;
     private MiningState mining;
+    private LaserState laser;
     private HudState hud;
 
     // Static bodies waiting to be added to the physics space
@@ -61,13 +62,16 @@ public class GameplayState extends BaseAppState {
 
         inventory = new Inventory();
 
-        // Physics must be attached before the player and minerals (they need its space)
+        // Physics must be attached before the player and minerals (they need its space).
+        // The laser is attached after the player so it sees the camera position of the same frame.
         physics = new PhysicsState();
         getStateManager().attach(physics);
         player = new PlayerControlState();
         getStateManager().attach(player);
         mining = new MiningState(localRootNode, inventory, FLOOR_TOP_Y, FLOOR_HALF_SIZE);
         getStateManager().attach(mining);
+        laser = new LaserState(mining);
+        getStateManager().attach(laser);
         hud = new HudState(inventory, mining);
         getStateManager().attach(hud);
 
@@ -149,6 +153,7 @@ public class GameplayState extends BaseAppState {
 
         // Order matters: players and minerals remove their bodies from the space before the space is destroyed
         getStateManager().detach(hud);
+        getStateManager().detach(laser);
         getStateManager().detach(mining);
         getStateManager().detach(player);
         getStateManager().detach(physics);
@@ -157,7 +162,7 @@ public class GameplayState extends BaseAppState {
 
     @Override
     protected void onEnable() {
-        // Gameplay is active: physics runs, player controls the camera, HUD is shown, cursor is hidden
+        // Gameplay is active: physics runs, player controls the camera, HUD and tool are shown, cursor is hidden
         if (physics != null) {
             physics.setEnabled(true);
         }
@@ -167,6 +172,9 @@ public class GameplayState extends BaseAppState {
         if (mining != null) {
             mining.setEnabled(true);
         }
+        if (laser != null) {
+            laser.setEnabled(true);
+        }
         if (hud != null) {
             hud.setEnabled(true);
         }
@@ -175,7 +183,7 @@ public class GameplayState extends BaseAppState {
 
     @Override
     protected void onDisable() {
-        // Gameplay is paused or closed: freeze everything, hide the HUD, show the cursor
+        // Gameplay is paused or closed: freeze everything, hide the HUD and the tool, show the cursor
         if (physics != null) {
             physics.setEnabled(false);
         }
@@ -184,6 +192,9 @@ public class GameplayState extends BaseAppState {
         }
         if (mining != null) {
             mining.setEnabled(false);
+        }
+        if (laser != null) {
+            laser.setEnabled(false);
         }
         if (hud != null) {
             hud.setEnabled(false);

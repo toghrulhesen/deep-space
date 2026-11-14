@@ -26,7 +26,7 @@ Planned next: minable asteroids and minerals with a resource counter (HUD), a fr
 | `Enter` (in main menu) | Start game |
 | `Q` (in menus) | Quit |
 | `Alt` + `Enter` | Toggle fullscreen |
-| `E` / Left mouse button | Mine the mineral you are looking at |
+| `E` / Left mouse button | Hold to mine the mineral you are looking at |
 
 ## Tech stack
 
