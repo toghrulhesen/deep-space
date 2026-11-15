@@ -176,6 +176,7 @@ public class MiningState extends BaseAppState {
     private void createMineral(MineralType type, float radius, float x, float z) {
         Geometry geom = new Geometry("Mineral_" + type.name(),
                 new Sphere(MESH_SAMPLES, MESH_SAMPLES, radius));
+        // Every mineral gets its own material (it can be changed independently, e.g. highlighted)
         Material mat = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
         mat.setBoolean("UseMaterialColors", true);
         mat.setColor("Diffuse", type.getColor());
@@ -297,6 +298,11 @@ public class MiningState extends BaseAppState {
         if (targetGeometry == null) return null;
         Mineral mineral = minerals.get(targetGeometry);
         return mineral == null ? null : mineral.type;
+    }
+
+    /** The mineral the player is looking at within mining range, or null (read only). */
+    public Geometry getTargetGeometry() {
+        return targetGeometry;
     }
 
     /** Mining progress from 0 to 1; 0 when nothing is being mined. */

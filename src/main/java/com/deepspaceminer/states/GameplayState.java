@@ -39,10 +39,11 @@ public class GameplayState extends BaseAppState {
     // Data shared between child states
     private Inventory inventory;
 
-    // Child states: physics world, player control, mining, laser and HUD
+    // Child states: physics world, player control, mining, target highlight, laser and HUD
     private PhysicsState physics;
     private PlayerControlState player;
     private MiningState mining;
+    private HighlightState highlight;
     private LaserState laser;
     private HudState hud;
 
@@ -63,6 +64,7 @@ public class GameplayState extends BaseAppState {
         inventory = new Inventory();
 
         // Physics must be attached before the player and minerals (they need its space).
+        // Highlight, laser and HUD read from MiningState, so they come after it.
         // The laser is attached after the player so it sees the camera position of the same frame.
         physics = new PhysicsState();
         getStateManager().attach(physics);
@@ -70,6 +72,8 @@ public class GameplayState extends BaseAppState {
         getStateManager().attach(player);
         mining = new MiningState(localRootNode, inventory, FLOOR_TOP_Y, FLOOR_HALF_SIZE);
         getStateManager().attach(mining);
+        highlight = new HighlightState(mining);
+        getStateManager().attach(highlight);
         laser = new LaserState(mining);
         getStateManager().attach(laser);
         hud = new HudState(inventory, mining);
@@ -154,6 +158,7 @@ public class GameplayState extends BaseAppState {
         // Order matters: players and minerals remove their bodies from the space before the space is destroyed
         getStateManager().detach(hud);
         getStateManager().detach(laser);
+        getStateManager().detach(highlight);
         getStateManager().detach(mining);
         getStateManager().detach(player);
         getStateManager().detach(physics);
@@ -171,6 +176,9 @@ public class GameplayState extends BaseAppState {
         }
         if (mining != null) {
             mining.setEnabled(true);
+        }
+        if (highlight != null) {
+            highlight.setEnabled(true);
         }
         if (laser != null) {
             laser.setEnabled(true);
@@ -192,6 +200,9 @@ public class GameplayState extends BaseAppState {
         }
         if (mining != null) {
             mining.setEnabled(false);
+        }
+        if (highlight != null) {
+            highlight.setEnabled(false);
         }
         if (laser != null) {
             laser.setEnabled(false);
