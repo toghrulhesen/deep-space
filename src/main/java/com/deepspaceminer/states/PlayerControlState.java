@@ -58,6 +58,9 @@ public class PlayerControlState extends BaseAppState {
     private InputManager inputManager;
     private Camera cam;
 
+    // Global settings (Invert Y); may be null only if it was not attached in Main
+    private GameSettingsState settings;
+
     private Node playerNode;
     private BetterCharacterControl character;
     private PhysicsSpace space;
@@ -83,6 +86,7 @@ public class PlayerControlState extends BaseAppState {
         this.app = (SimpleApplication) app;
         this.inputManager = this.app.getInputManager();
         this.cam = this.app.getCamera();
+        this.settings = getStateManager().getState(GameSettingsState.class);
 
         // Start looking along -Z towards the origin
         yaw = 0f;
@@ -103,7 +107,7 @@ public class PlayerControlState extends BaseAppState {
         inputManager.addListener(actionListener,
                 MAP_FORWARD, MAP_BACKWARD, MAP_LEFT, MAP_RIGHT, MAP_JUMP, MAP_SPRINT);
 
-        // Mouse look. Moving the mouse up looks up
+        // Mouse look. By default moving the mouse up looks up
         // (in jME a positive pitch tilts the camera down, so the Y signs are flipped).
         inputManager.addMapping(MAP_LOOK_LEFT, new MouseAxisTrigger(MouseInput.AXIS_X, true));
         inputManager.addMapping(MAP_LOOK_RIGHT, new MouseAxisTrigger(MouseInput.AXIS_X, false));
@@ -134,16 +138,22 @@ public class PlayerControlState extends BaseAppState {
         if (!isEnabled()) return;
 
         float delta = value * LOOK_SENSITIVITY;
+        // The setting is read on every event, so a change in the menu applies immediately
+        float pitchDelta = isInvertY() ? -delta : delta;
         switch (name) {
             case MAP_LOOK_LEFT -> yaw += delta;
             case MAP_LOOK_RIGHT -> yaw -= delta;
-            case MAP_LOOK_UP -> pitch += delta;
-            case MAP_LOOK_DOWN -> pitch -= delta;
+            case MAP_LOOK_UP -> pitch += pitchDelta;
+            case MAP_LOOK_DOWN -> pitch -= pitchDelta;
             default -> { }
         }
         pitch = FastMath.clamp(pitch, -MAX_PITCH, MAX_PITCH);
         applyRotation();
     };
+
+    private boolean isInvertY() {
+        return settings != null && settings.isInvertY();
+    }
 
     private void applyRotation() {
         cam.setRotation(new Quaternion().fromAngles(pitch, yaw, 0f));

@@ -1,5 +1,7 @@
 package com.deepspaceminer.states;
 
+import com.deepspaceminer.ui.MenuButton;
+import com.deepspaceminer.ui.MenuMouse;
 import com.jme3.app.Application;
 import com.jme3.app.SimpleApplication;
 import com.jme3.app.state.BaseAppState;
@@ -17,21 +19,25 @@ import com.jme3.scene.Geometry;
 import com.jme3.scene.Node;
 import com.jme3.scene.shape.Quad;
 
+import java.util.List;
 import java.util.logging.Logger;
 
 /**
  * Pause menu shown on top of the frozen gameplay scene.
- * ESC resumes, M returns to the main menu, Q exits the game.
+ * ESC resumes, S opens the settings, M returns to the main menu, Q exits the game.
+ * Every entry works with the keyboard and with the mouse.
  */
 public class PauseState extends BaseAppState {
 
     private static final Logger logger = Logger.getLogger(PauseState.class.getName());
 
     private static final String MAP_RESUME = "PauseResume";
+    private static final String MAP_SETTINGS = "PauseSettings";
     private static final String MAP_MAIN_MENU = "PauseMainMenu";
     private static final String MAP_EXIT = "PauseExit";
+    private static final String MAP_CLICK = "PauseClick";
 
-    private enum Action { NONE, RESUME, MAIN_MENU }
+    private enum Action { NONE, RESUME, SETTINGS, MAIN_MENU }
 
     private SimpleApplication app;
     private Node guiNode;
@@ -41,9 +47,11 @@ public class PauseState extends BaseAppState {
     private Node pauseRoot;
     private Geometry dimmer;
     private BitmapText titleText;
-    private BitmapText resumeText;
-    private BitmapText menuText;
-    private BitmapText exitText;
+    private MenuButton resumeButton;
+    private MenuButton settingsButton;
+    private MenuButton menuButton;
+    private MenuButton exitButton;
+    private MenuMouse mouse;
 
     private int lastWidth;
     private int lastHeight;
@@ -74,23 +82,29 @@ public class PauseState extends BaseAppState {
         dimmer.setQueueBucket(RenderQueue.Bucket.Gui);
         pauseRoot.attachChild(dimmer);
 
-        titleText = createText("PAUSED", 2.5f, ColorRGBA.Cyan);
-        resumeText = createText("Press ESC to Resume", 1.3f, ColorRGBA.Green);
-        menuText = createText("Press M for Main Menu", 1.3f, ColorRGBA.Yellow);
-        exitText = createText("Press Q to Exit", 1.3f, ColorRGBA.Red);
-
+        titleText = new BitmapText(guiFont);
+        titleText.setSize(guiFont.getCharSet().getRenderedSize() * 2.5f);
+        titleText.setText("PAUSED");
+        titleText.setColor(ColorRGBA.Cyan);
         pauseRoot.attachChild(titleText);
-        pauseRoot.attachChild(resumeText);
-        pauseRoot.attachChild(menuText);
-        pauseRoot.attachChild(exitText);
-    }
 
-    private BitmapText createText(String text, float sizeMultiplier, ColorRGBA color) {
-        BitmapText bt = new BitmapText(guiFont, false);
-        bt.setSize(guiFont.getCharSet().getRenderedSize() * sizeMultiplier);
-        bt.setText(text);
-        bt.setColor(color);
-        return bt;
+        // Buttons only request an action; update() carries it out
+        resumeButton = new MenuButton(guiFont, "Resume [Esc]", 1.3f,
+                ColorRGBA.Green, () -> pendingAction = Action.RESUME);
+        settingsButton = new MenuButton(guiFont, "Settings [S]", 1.3f,
+                ColorRGBA.Orange, () -> pendingAction = Action.SETTINGS);
+        menuButton = new MenuButton(guiFont, "Main Menu [M]", 1.3f,
+                ColorRGBA.Yellow, () -> pendingAction = Action.MAIN_MENU);
+        exitButton = new MenuButton(guiFont, "Exit [Q]", 1.3f,
+                ColorRGBA.Red, app::stop);
+
+        pauseRoot.attachChild(resumeButton.getText());
+        pauseRoot.attachChild(settingsButton.getText());
+        pauseRoot.attachChild(menuButton.getText());
+        pauseRoot.attachChild(exitButton.getText());
+
+        mouse = new MenuMouse(inputManager, MAP_CLICK,
+                List.of(resumeButton, settingsButton, menuButton, exitButton));
     }
 
     private void updatePositions() {
@@ -103,21 +117,22 @@ public class PauseState extends BaseAppState {
         ((Quad) dimmer.getMesh()).updateGeometry(w, h);
         dimmer.setLocalTranslation(0, 0, -1);
 
-        center(titleText, w, h / 2f + 80);
-        center(resumeText, w, h / 2f);
-        center(menuText, w, h / 2f - 50);
-        center(exitText, w, h / 2f - 100);
-    }
-
-    private void center(BitmapText text, float screenWidth, float y) {
-        text.setLocalTranslation((screenWidth - text.getLineWidth()) / 2f, y, 0);
+        titleText.setLocalTranslation((w - titleText.getLineWidth()) / 2f, h / 2f + 80, 0);
+        resumeButton.centerHorizontally(w, h / 2f);
+        settingsButton.centerHorizontally(w, h / 2f - 50);
+        menuButton.centerHorizontally(w, h / 2f - 100);
+        exitButton.centerHorizontally(w, h / 2f - 150);
     }
 
     private void initKeys() {
         inputManager.addMapping(MAP_RESUME, new KeyTrigger(KeyInput.KEY_ESCAPE));
+        inputManager.addMapping(MAP_SETTINGS, new KeyTrigger(KeyInput.KEY_S));
         inputManager.addMapping(MAP_MAIN_MENU, new KeyTrigger(KeyInput.KEY_M));
         inputManager.addMapping(MAP_EXIT, new KeyTrigger(KeyInput.KEY_Q));
-        inputManager.addListener(actionListener, MAP_RESUME, MAP_MAIN_MENU, MAP_EXIT);
+        inputManager.addListener(actionListener,
+                MAP_RESUME, MAP_SETTINGS, MAP_MAIN_MENU, MAP_EXIT);
+
+        mouse.register();
     }
 
     private final ActionListener actionListener = (name, isPressed, tpf) -> {
@@ -125,6 +140,7 @@ public class PauseState extends BaseAppState {
 
         switch (name) {
             case MAP_RESUME -> pendingAction = Action.RESUME;
+            case MAP_SETTINGS -> pendingAction = Action.SETTINGS;
             case MAP_MAIN_MENU -> pendingAction = Action.MAIN_MENU;
             case MAP_EXIT -> app.stop();
             default -> { }
@@ -138,6 +154,7 @@ public class PauseState extends BaseAppState {
                 || app.getCamera().getHeight() != lastHeight) {
             updatePositions();
         }
+        mouse.updateHover();
 
         Action action = pendingAction;
         pendingAction = Action.NONE;
@@ -147,6 +164,12 @@ public class PauseState extends BaseAppState {
                 logger.info("Resuming game...");
                 // cleanup() re-enables GameplayState
                 getStateManager().detach(this);
+            }
+            case SETTINGS -> {
+                logger.info("Opening settings...");
+                // The settings screen enables this menu again when it closes
+                setEnabled(false);
+                getStateManager().attach(new SettingsMenuState(this));
             }
             case MAIN_MENU -> {
                 logger.info("Returning to main menu...");
@@ -164,9 +187,11 @@ public class PauseState extends BaseAppState {
     @Override
     protected void cleanup(Application app) {
         inputManager.deleteMapping(MAP_RESUME);
+        inputManager.deleteMapping(MAP_SETTINGS);
         inputManager.deleteMapping(MAP_MAIN_MENU);
         inputManager.deleteMapping(MAP_EXIT);
         inputManager.removeListener(actionListener);
+        mouse.unregister();
 
         // Give control back to gameplay (if it still exists)
         GameplayState gameplay = getStateManager().getState(GameplayState.class);
@@ -178,6 +203,7 @@ public class PauseState extends BaseAppState {
     @Override
     protected void onEnable() {
         guiNode.attachChild(pauseRoot);
+        mouse.setActive(true);
         inputManager.setCursorVisible(true);
         updatePositions();
     }
@@ -185,5 +211,6 @@ public class PauseState extends BaseAppState {
     @Override
     protected void onDisable() {
         pauseRoot.removeFromParent();
+        mouse.setActive(false);
     }
 }

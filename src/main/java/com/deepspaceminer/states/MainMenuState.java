@@ -1,5 +1,7 @@
 package com.deepspaceminer.states;
 
+import com.deepspaceminer.ui.MenuButton;
+import com.deepspaceminer.ui.MenuMouse;
 import com.jme3.app.Application;
 import com.jme3.app.SimpleApplication;
 import com.jme3.app.state.BaseAppState;
@@ -12,11 +14,18 @@ import com.jme3.input.controls.KeyTrigger;
 import com.jme3.math.ColorRGBA;
 import com.jme3.scene.Node;
 
+import java.util.List;
 import java.util.logging.Logger;
 
+/** Title screen. Every entry works with the keyboard and with the mouse. */
 public class MainMenuState extends BaseAppState {
 
     private static final Logger logger = Logger.getLogger(MainMenuState.class.getName());
+
+    private static final String MAP_START = "MenuStart";
+    private static final String MAP_SETTINGS = "MenuSettings";
+    private static final String MAP_EXIT = "MenuExit";
+    private static final String MAP_CLICK = "MenuClick";
 
     private SimpleApplication app;
     private Node guiNode;
@@ -24,8 +33,10 @@ public class MainMenuState extends BaseAppState {
     private BitmapFont guiFont;
 
     private BitmapText titleText;
-    private BitmapText startText;
-    private BitmapText exitText;
+    private MenuButton startButton;
+    private MenuButton settingsButton;
+    private MenuButton exitButton;
+    private MenuMouse mouse;
 
     // Last known screen size, used to re-center the menu after resize/fullscreen
     private int lastWidth;
@@ -44,20 +55,20 @@ public class MainMenuState extends BaseAppState {
     }
 
     private void initUI() {
-        titleText = new BitmapText(guiFont, false);
+        titleText = new BitmapText(guiFont);
         titleText.setSize(guiFont.getCharSet().getRenderedSize() * 2.5f);
         titleText.setText("DEEP SPACE MINER");
         titleText.setColor(ColorRGBA.Cyan);
 
-        startText = new BitmapText(guiFont, false);
-        startText.setSize(guiFont.getCharSet().getRenderedSize() * 1.3f);
-        startText.setText("Press ENTER to Start");
-        startText.setColor(ColorRGBA.Green);
+        startButton = new MenuButton(guiFont, "Start Game [Enter]", 1.3f,
+                ColorRGBA.Green, this::startGame);
+        settingsButton = new MenuButton(guiFont, "Settings [S]", 1.3f,
+                ColorRGBA.Yellow, this::openSettings);
+        exitButton = new MenuButton(guiFont, "Exit [Q]", 1.3f,
+                ColorRGBA.Red, this::exitGame);
 
-        exitText = new BitmapText(guiFont, false);
-        exitText.setSize(guiFont.getCharSet().getRenderedSize() * 1.3f);
-        exitText.setText("Press Q to Exit");
-        exitText.setColor(ColorRGBA.Red);
+        mouse = new MenuMouse(inputManager, MAP_CLICK,
+                List.of(startButton, settingsButton, exitButton));
     }
 
     private void updateMenuPositions() {
@@ -66,20 +77,21 @@ public class MainMenuState extends BaseAppState {
         lastWidth = app.getCamera().getWidth();
         lastHeight = app.getCamera().getHeight();
 
-        float tWidth = titleText.getLineWidth();
-        float sWidth = startText.getLineWidth();
-        float eWidth = exitText.getLineWidth();
-
         // Center the texts on screen
-        titleText.setLocalTranslation((screenWidth - tWidth) / 2f, screenHeight / 2f + 80, 0);
-        startText.setLocalTranslation((screenWidth - sWidth) / 2f, screenHeight / 2f, 0);
-        exitText.setLocalTranslation((screenWidth - eWidth) / 2f, screenHeight / 2f - 50, 0);
+        titleText.setLocalTranslation(
+                (screenWidth - titleText.getLineWidth()) / 2f, screenHeight / 2f + 80, 0);
+        startButton.centerHorizontally(screenWidth, screenHeight / 2f);
+        settingsButton.centerHorizontally(screenWidth, screenHeight / 2f - 50);
+        exitButton.centerHorizontally(screenWidth, screenHeight / 2f - 100);
     }
 
     private void initKeys() {
-        inputManager.addMapping("MenuStart", new KeyTrigger(KeyInput.KEY_RETURN));
-        inputManager.addMapping("MenuExit", new KeyTrigger(KeyInput.KEY_Q));
-        inputManager.addListener(actionListener, "MenuStart", "MenuExit");
+        inputManager.addMapping(MAP_START, new KeyTrigger(KeyInput.KEY_RETURN));
+        inputManager.addMapping(MAP_SETTINGS, new KeyTrigger(KeyInput.KEY_S));
+        inputManager.addMapping(MAP_EXIT, new KeyTrigger(KeyInput.KEY_Q));
+        inputManager.addListener(actionListener, MAP_START, MAP_SETTINGS, MAP_EXIT);
+
+        mouse.register();
     }
 
     private boolean isAltHeld() {
@@ -87,24 +99,36 @@ public class MainMenuState extends BaseAppState {
         return fullscreen != null && fullscreen.isAltDown();
     }
 
-    private final ActionListener actionListener = new ActionListener() {
-        @Override
-        public void onAction(String name, boolean isPressed, float tpf) {
-            if (!isEnabled()) return;
+    private final ActionListener actionListener = (name, isPressed, tpf) -> {
+        if (!isEnabled() || !isPressed) return;
 
-            if (name.equals("MenuStart") && isPressed) {
+        switch (name) {
+            case MAP_START -> {
                 // Alt + Enter is the fullscreen shortcut, not "Start"
-                if (isAltHeld()) return;
-
-                logger.info("Game is starting, switching to GameplayState...");
-                getStateManager().detach(MainMenuState.this);
-                getStateManager().attach(new GameplayState());
+                if (!isAltHeld()) startGame();
             }
-            if (name.equals("MenuExit") && isPressed) {
-                app.stop();
-            }
+            case MAP_SETTINGS -> openSettings();
+            case MAP_EXIT -> exitGame();
+            default -> { }
         }
     };
+
+    private void startGame() {
+        logger.info("Game is starting, switching to GameplayState...");
+        getStateManager().detach(this);
+        getStateManager().attach(new GameplayState());
+    }
+
+    private void openSettings() {
+        logger.info("Opening settings...");
+        // The settings screen enables this menu again when it closes
+        setEnabled(false);
+        getStateManager().attach(new SettingsMenuState(this));
+    }
+
+    private void exitGame() {
+        app.stop();
+    }
 
     @Override
     public void update(float tpf) {
@@ -113,20 +137,25 @@ public class MainMenuState extends BaseAppState {
                 || app.getCamera().getHeight() != lastHeight) {
             updateMenuPositions();
         }
+        mouse.updateHover();
     }
 
     @Override
     protected void cleanup(Application app) {
-        inputManager.deleteMapping("MenuStart");
-        inputManager.deleteMapping("MenuExit");
+        inputManager.deleteMapping(MAP_START);
+        inputManager.deleteMapping(MAP_SETTINGS);
+        inputManager.deleteMapping(MAP_EXIT);
         inputManager.removeListener(actionListener);
+        mouse.unregister();
     }
 
     @Override
     protected void onEnable() {
         guiNode.attachChild(titleText);
-        guiNode.attachChild(startText);
-        guiNode.attachChild(exitText);
+        guiNode.attachChild(startButton.getText());
+        guiNode.attachChild(settingsButton.getText());
+        guiNode.attachChild(exitButton.getText());
+        mouse.setActive(true);
         inputManager.setCursorVisible(true);
         updateMenuPositions();
     }
@@ -134,7 +163,9 @@ public class MainMenuState extends BaseAppState {
     @Override
     protected void onDisable() {
         guiNode.detachChild(titleText);
-        guiNode.detachChild(startText);
-        guiNode.detachChild(exitText);
+        guiNode.detachChild(startButton.getText());
+        guiNode.detachChild(settingsButton.getText());
+        guiNode.detachChild(exitButton.getText());
+        mouse.setActive(false);
     }
 }
